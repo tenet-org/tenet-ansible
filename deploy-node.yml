@@ -1,0 +1,86 @@
+---
+- name: Deploy tenet node
+  hosts: "node"
+  become: true
+  vars:
+    sync_by_snapshot: true
+    binary_url: "https://github.com/tenet-org/tenet-mainnet/releases/download/v11.0.5/tenet-node_11.0.5_Linux_amd64.tar.gz"
+  tasks:
+    - name: Open firewall ports
+      shell: ufw allow "{{ item }}"
+      with_items:
+        - 8545/tcp
+        - 8546/tcp
+        - 26657/tcp
+
+    - name: Clone a tenet mainnet config
+      git:
+        repo: https://github.com/tenet-org/tenet-mainnet.git
+        dest: ~/.tenetd
+        clone: yes
+        update: yes
+        force: yes
+
+    - name: Change sync method
+      replace:
+        path=/root/.tenetd/config/config.toml
+        regexp="enable = false"
+        replace="enable = true"
+      when:  sync_by_snapshot == true
+    - name: Create dir for tmp files
+      file:
+        path: /tmp/tenetd_binary
+        state: directory
+
+    - name: Download tenetd binary tar archive
+      get_url:
+        url: "{{ binary_url }}"
+        dest: /tmp/tenetd_binary/tenetd-binary.tar.gz
+
+    - name: Extract tenetd binary tar archive
+      unarchive:
+        src: /tmp/tenetd_binary/tenetd-binary.tar.gz
+        dest: /tmp/tenetd_binary
+        remote_src: yes
+
+    - name: Copy tenetd binary to ~/.tenetd/ directory
+      copy:
+        src: /tmp/tenetd_binary/bin/tenetd
+        dest: ~/.tenetd/
+        remote_src: yes
+        mode: '+x'
+
+    - name: Remove temp files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/tenetd_binary
+
+    - name: create config directory for tenet-node
+      file:
+        path=/etc/tenet-node
+        state=directory
+
+    - name: create environment file
+      template:
+        src=templates/tenet-node.conf.j2
+        dest=/etc/tenet-node/tenet-node.conf
+
+    - name: Create Unit file
+      template:
+        src=templates/tenet-node.service.j2
+        dest=/etc/systemd/system/tenet-node.service
+
+    - name: Reload systemctl
+      command: systemctl daemon-reload
+
+    - name: Enable service tenet-node.service
+      service:
+        name: tenet-node.service
+        enabled: yes
+
+    - name: Restart service tenet-node.service
+      service:
+        name: tenet-node.service
+        state: restarted
