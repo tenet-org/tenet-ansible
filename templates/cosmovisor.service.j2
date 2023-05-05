@@ -1,0 +1,16 @@
+[Unit]
+Description=Cosmovisor service
+After=network.target
+
+[Service]
+Type=simple
+User=tenetd
+WorkingDirectory=/home/tenetd
+ExecStart=/usr/local/bin/cosmovisor run start
+EnvironmentFile=/etc/cosmovisor/cosmovisor.conf
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

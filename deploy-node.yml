@@ -4,9 +4,9 @@
   become: true
   vars:
     sync_by_snapshot: true
-    binary_url: "https://github.com/tenet-org/tenet-mainnet/releases/download/v11.0.6/tenet-mainnet_11.0.6_Linux_amd64.tar.gz"
-    config_url: "https://github.com/tenet-org/tenet-mainnet.git"
-#    config_url: "https://github.com/tenet-org/tenet-testnet.git"
+    pruning_nothing: true
+    config: "mainnet"
+#    config: "testnet"
   tasks:
     - name: Open firewall ports
       shell: ufw allow "{{ item }}"
@@ -14,76 +14,120 @@
         - 8545/tcp
         - 8546/tcp
         - 26657/tcp
+        - 443/tcp
 
-    - name: Clone a tenet mainnet config
-      git:
-        repo: "{{ config_url }}"
-        dest: ~/.tenetd
-        clone: yes
-        update: yes
-        force: yes
+    - name: adduser tenetd to a system
+      ansible.builtin.user:
+        name: tenetd
+        shell: /sbin/nologin
+        create_home: yes
 
-    - name: Change sync method
-      replace:
-        path=/root/.tenetd/config/config.toml
-        regexp="enable = false"
-        replace="enable = true"
-      when: sync_by_snapshot == true
+    - name: get volume name
+      command: "ls /mnt/"
+      register: volume_name
 
-    - name: Create dir for tmp files
+    - name: Unmount a mounted volume
+      ansible.posix.mount:
+        path: /mnt/{{volume_name.stdout}}
+        state: unmounted
+
+    - name: dispaly uuid & store in variable
+      command: blkid -s UUID -o value /dev/sda
+      register: uuid_device
+
+    - name: add the below lines
+      blockinfile:
+        path: /etc/fstab
+        state: present
+        block: |
+          UUID={{ uuid_device.stdout }}       /home/tenetd     ext4   discard,errors=remount-ro       0 1
+
+    - name: mount all
+      become: true
+      shell: "mount -a"
+
+    - name: install golang
+      ansible.builtin.apt:
+        name: golang
+        update_cache: yes
+        state: present
+
+    - name: install cosmovisor go package
+      become: true
+      shell: "go install cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@latest"
+
+    - name: copy cosmovisor to a system
+      become: true
+      shell: "cp /root/go/bin/cosmovisor /usr/local/bin"
+
+    - name: create directory for cosmovisor
       file:
-        path: /tmp/tenetd_binary
+        path: /home/tenetd/cosmovisor/genesis/bin
         state: directory
 
-    - name: Download tenetd binary tar archive
-      get_url:
-        url: "{{ binary_url }}"
-        dest: /tmp/tenetd_binary/tenetd-binary.tar.gz
+    - name: copy tenetd to a system
+      become: true
+      ansible.builtin.copy:
+        src: ./bin/tenetd
+        dest: /home/tenetd/cosmovisor/genesis/bin/tenetd
+        owner: tenetd
+        group: tenetd
+        mode: 0644
 
-    - name: Extract tenetd binary tar archive
-      unarchive:
-        src: /tmp/tenetd_binary/tenetd-binary.tar.gz
-        dest: /tmp/tenetd_binary
-        remote_src: yes
+    - name: copy tenet project configs to VMs
+      ansible.builtin.copy:
+        src: "./tenet-{{ config }}/"
+        dest: "/home/tenetd/.tenetd/"
+        owner: tenetd
+        group: tenetd
+        mode: 0644
 
-    - name: Copy tenetd binary to ~/.tenetd/ directory
-      copy:
-        src: /tmp/tenetd_binary/bin/tenetd
-        dest: ~/.tenetd/
-        remote_src: yes
-        mode: '+x'
+    - name: change sync method
+      replace:
+        path: /home/tenetd/.tenetd/config/config.toml
+        regexp: "enable = false"
+        replace: "enable = true"
+      when: sync_by_snapshot == true
 
-    - name: Remove temp files
+    - name: change pruning rule
+      replace:
+        path: /home/tenetd/.tenetd/config/app.toml
+        regexp: 'pruning = "default"'
+        replace: 'pruning = "nothing"'
+      when: pruning_nothing == true
+
+    - name: cosmovisor init
+      become_user: tenetd
+      shell: cosmovisor init /home/tenetd/cosmovisor/genesis/bin/tenetd
+      environment:
+        DAEMON_NAME: tenetd
+        DAEMON_HOME: /home/tenetd/.tenetd
+        DAEMON_RESTART_AFTER_UPGRADE: true
+
+    - name: create config directory for cosmovisor
       file:
-        path: "{{ item }}"
-        state: absent
-      with_items:
-        - /tmp/tenetd_binary
-
-    - name: create config directory for tenet-node
-      file:
-        path=/etc/tenet-node
-        state=directory
+        path: /etc/cosmovisor
+        state: directory
 
     - name: create environment file
       template:
-        src=templates/tenet-node.conf.j2
-        dest=/etc/tenet-node/tenet-node.conf
+        src: cosmovisor.conf.j2
+        dest: /etc/cosmovisor/cosmovisor.conf
 
-    - name: Create Unit file
+    - name: create Unit file
       template:
-        src=templates/tenet-node.service.j2
-        dest=/etc/systemd/system/tenet-node.service
+        src: cosmovisor.service.j2
+        dest: /etc/systemd/system/cosmovisor.service
 
-    - name: Reload systemctl
+    - name: reload systemctl
       command: systemctl daemon-reload
 
-    - name: Enable service tenet-node.service
+    - name: enable service cosmovisor.service, and not touch the state
       service:
-        name: tenet-node.service
+        name: cosmovisor.service
         enabled: yes
 
-    - name: Restart service tenet-node.service
+    - name: restart service cosmovisor.service, in all cases
       service:
-        name: tenet-node.service
+        name: cosmovisor.service
         state: restarted
