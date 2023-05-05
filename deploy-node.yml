@@ -4,7 +4,9 @@
   become: true
   vars:
     sync_by_snapshot: true
-    binary_url: "https://github.com/tenet-org/tenet-mainnet/releases/download/v11.0.5/tenet-node_11.0.5_Linux_amd64.tar.gz"
+    binary_url: "https://github.com/tenet-org/tenet-mainnet/releases/download/v11.0.6/tenet-mainnet_11.0.6_Linux_amd64.tar.gz"
+    config_url: "https://github.com/tenet-org/tenet-mainnet.git"
+#    config_url: "https://github.com/tenet-org/tenet-testnet.git"
   tasks:
     - name: Open firewall ports
       shell: ufw allow "{{ item }}"
@@ -15,7 +17,7 @@
 
     - name: Clone a tenet mainnet config
       git:
-        repo: https://github.com/tenet-org/tenet-mainnet.git
+        repo: "{{ config_url }}"
         dest: ~/.tenetd
         clone: yes
         update: yes
@@ -26,7 +28,8 @@
         path=/root/.tenetd/config/config.toml
         regexp="enable = false"
         replace="enable = true"
-      when:  sync_by_snapshot == true
+      when: sync_by_snapshot == true
+
     - name: Create dir for tmp files
       file:
         path: /tmp/tenetd_binary
