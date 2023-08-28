@@ -4,3 +4,6 @@
 [submodule "tenet-testnet"]
 	path = tenet-testnet
 	url = https://github.com/tenet-org/tenet-testnet
+[submodule "tenet-devnet"]
+	path = tenet-devnet
+	url = https://github.com/tenet-org/tenet-devnet
