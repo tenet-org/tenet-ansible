@@ -3,17 +3,23 @@
   hosts: "node"
   become: true
   vars:
-    sync_by_snapshot: true
+    go_version: 1.20.5
+    go_root: /usr/local/go
+    go_download_url: "https://golang.org/dl/go{{ go_version }}.linux-amd64.tar.gz"
+    sync_by_snapshot: false
     pruning_nothing: true
     config: "mainnet"
 #    config: "testnet"
+#    config: "devnet"
   tasks:
     - name: Open firewall ports
       shell: ufw allow "{{ item }}"
       with_items:
         - 8545/tcp
         - 8546/tcp
+        - 26656/tcp
         - 26657/tcp
+        - 1317/tcp
         - 443/tcp
 
     - name: adduser tenetd to a system
@@ -22,39 +28,78 @@
         shell: /sbin/nologin
         create_home: yes
 
-    - name: get volume name
+    - name: get the volume name
       command: "ls /mnt/"
       register: volume_name
 
-    - name: Unmount a mounted volume
+    - name: unmount a mounted volume
       ansible.posix.mount:
-        path: /mnt/{{volume_name.stdout}}
+        path: "/mnt/{{volume_name.stdout}}"
         state: unmounted
 
-    - name: dispaly uuid & store in variable
-      command: blkid -s UUID -o value /dev/sda
+    - name: register the UUID
+      command: "blkid -s UUID -o value /dev/sda"
+      changed_when: false
       register: uuid_device
 
-    - name: add the below lines
+    - name: add the UUID to /etc/fstab
       blockinfile:
-        path: /etc/fstab
+        path: "/etc/fstab"
         state: present
         block: |
-          UUID={{ uuid_device.stdout }}       /home/tenetd     ext4   discard,errors=remount-ro       0 1
+          UUID={{ uuid_device.stdout }} /home/tenetd ext4 discard,errors=remount-ro 0 1
 
     - name: mount all
+      ansible.builtin.shell:
+        cmd: "mount -a"
       become: true
-      shell: "mount -a"
 
-    - name: install golang
-      ansible.builtin.apt:
-        name: golang
-        update_cache: yes
+    - name: Check if Go is installed
+      command: go version
+      register: go_installed
+      ignore_errors: yes
+
+    - name: Install wget and tar
+      package:
+        name: "{{ item }}"
         state: present
+      loop:
+        - wget
+        - tar
+
+    - name: Download Go
+      get_url:
+        url: "{{ go_download_url }}"
+        dest: "/tmp/go{{ go_version }}.linux-amd64.tar.gz"
+      when: go_installed is failed
+
+    - name: Remove old Go installation
+      command: rm -rf {{ go_root }}
+      args:
+        removes: "{{ go_root }}"
+      when: go_installed is not failed
+
+    - name: Extract Go Archive
+      unarchive:
+        src: "/tmp/go{{ go_version }}.linux-amd64.tar.gz"
+        dest: /usr/local
+        remote_src: yes
+        creates: "{{ go_root }}"
+      when: go_installed is failed
+
+    - name: Set Go Environment Variables
+      blockinfile:
+        path: /etc/profile
+        block: |
+          export GOROOT={{ go_root }}
+          export PATH=$PATH:{{ go_root }}/bin
 
     - name: install cosmovisor go package
       become: true
-      shell: "go install cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@latest"
+      shell: "{{ go_root }}/bin/go install github.com/cosmos/cosmos-sdk/cosmovisor/cmd/cosmovisor@latest"
+      environment:
+        GOPATH: "/root/go"
+        GOBIN: "/root/go/bin"
 
     - name: copy cosmovisor to a system
       become: true
