@@ -8,9 +8,10 @@
     go_download_url: "https://golang.org/dl/go{{ go_version }}.linux-amd64.tar.gz"
     sync_by_snapshot: false
     pruning_nothing: true
-#    config: "mainnet"
+    config: "mainnet"
 #    config: "testnet"
-    config: "devnet"
+#    config: "devnet"
+
   tasks:
     - name: Open firewall ports
       shell: ufw allow "{{ item }}"

@@ -14,7 +14,7 @@ Download the first released binary by visiting the official download page of the
 In the `hosts.yml` file, replace `ansible_host` with the actual IP address or hostname of the VM where you want to deploy the node.
 
 ### 3) Setup Stage Configuration
-In the `deploy-node.yml` file, set the correct URL for `config_url`. This should point to the location where your configuration file for the node is stored.
+In the `deploy-node.yml` file, set the correct value for `config`.
 
 ### Optional Settings
 If you want to sync your node from a snapshot, set `sync_by_snapshot` to `true` in the `deploy-node.yml` file. This setting is optional and should be used based on your requirement.
