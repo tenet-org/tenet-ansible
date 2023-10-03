@@ -8,9 +8,9 @@
     go_download_url: "https://golang.org/dl/go{{ go_version }}.linux-amd64.tar.gz"
     sync_by_snapshot: false
     pruning_nothing: true
-    config: "mainnet"
+#    config: "mainnet"
 #    config: "testnet"
-#    config: "devnet"
+    config: "devnet"
   tasks:
     - name: Open firewall ports
       shell: ufw allow "{{ item }}"
@@ -54,11 +54,6 @@
         cmd: "mount -a"
       become: true
 
-    - name: Check if Go is installed
-      command: go version
-      register: go_installed
-      ignore_errors: yes
-
     - name: Install wget and tar
       package:
         name: "{{ item }}"
@@ -94,30 +89,30 @@
           export GOROOT={{ go_root }}
           export PATH=$PATH:{{ go_root }}/bin
 
-    - name: install cosmovisor go package
-      become: true
-      shell: "{{ go_root }}/bin/go install github.com/cosmos/cosmos-sdk/cosmovisor/cmd/cosmovisor@latest"
-      environment:
-        GOPATH: "/root/go"
-        GOBIN: "/root/go/bin"
-
     - name: copy cosmovisor to a system
       become: true
-      shell: "cp /root/go/bin/cosmovisor /usr/local/bin"
+      ansible.builtin.copy:
+        src: ./bin/cosmovisor
+        dest: /usr/local/bin/cosmovisor
+        mode: 0755
 
     - name: create directory for cosmovisor
+      become: true
       file:
-        path: /home/tenetd/cosmovisor/genesis/bin
+        path: /home/tenetd/.tenetd/cosmovisor/genesis/bin
         state: directory
+        owner: tenetd
+        group: tenetd
+        mode: 0775
 
     - name: copy tenetd to a system
       become: true
       ansible.builtin.copy:
-        src: ./bin/tenetd
-        dest: /home/tenetd/cosmovisor/genesis/bin/tenetd
+        src: ./bin/{{ config }}/tenetd
+        dest: /home/tenetd/.tenetd/cosmovisor/genesis/bin/tenetd
         owner: tenetd
         group: tenetd
-        mode: 0644
+        mode: 0775
 
     - name: copy tenet project configs to VMs
       ansible.builtin.copy:
@@ -143,16 +138,19 @@
 
     - name: cosmovisor init
       become_user: tenetd
-      shell: cosmovisor init /home/tenetd/cosmovisor/genesis/bin/tenetd
+      shell: cosmovisor init /home/tenetd/.tenetd/cosmovisor/genesis/bin/tenetd
       environment:
         DAEMON_NAME: tenetd
         DAEMON_HOME: /home/tenetd/.tenetd
         DAEMON_RESTART_AFTER_UPGRADE: true
 
     - name: create config directory for cosmovisor
+      become: true
       file:
         path: /etc/cosmovisor
         state: directory
+        owner: tenetd
+        group: tenetd
 
     - name: create environment file
       template:
