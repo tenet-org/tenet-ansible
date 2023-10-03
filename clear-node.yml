@@ -1,0 +1,19 @@
+---
+- name: Remove tenet files from node
+  hosts: "node"
+  become: true
+  tasks:
+    - name: Stop cosmovisor.service
+      ansible.builtin.service:
+        name: cosmovisor
+        state: stopped
+
+    - name: Remove /home/tenetd/.tenetd directory
+      ansible.builtin.file:
+        path: /home/tenetd/.tenetd
+        state: absent
+
+    - name: Remove /usr/local/bin/cosmovisor file
+      ansible.builtin.file:
+        path: /usr/local/bin/cosmovisor
+        state: absent
