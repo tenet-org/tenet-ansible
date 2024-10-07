@@ -1,0 +1,107 @@
+---
+- name: Deploy tenet node
+  hosts: all
+  vars:
+    ansible_user: root
+    cosmovisor:
+      version: v1.6.0
+      arch: amd64
+    tenetd:
+      user: tenetd
+      home: /opt/tenetd
+      version: 11.1.0-prebuild5
+      arch: amd64
+  handlers:
+    - name: restart cosmovisor
+      service:
+        name: cosmovisor.service
+        enabled: yes
+        state: restarted
+  tasks:
+    - name: Firewall
+      block:
+        - name: allow ports
+          shell: ufw allow "{{ item }}"
+          with_items:
+            - 8545/tcp
+            - 8546/tcp
+            - 26656/tcp
+            - 26657/tcp
+            - 1317/tcp
+            - 443/tcp
+            - 22/tcp
+        - name: deny other connections
+          shell: ufw default deny incoming
+        - name: enable firewall
+          shell: ufw --force enable
+    - name: create {{tenetd.home}} directory
+      ansible.builtin.file:
+        path: "{{tenetd.home}}"
+        state: directory
+    - name: mount volume to {{tenetd.home}}
+      ansible.posix.mount:
+        path: "{{tenetd.home}}"
+        src: "/dev/disk/by-id/scsi-0DO_Volume_{{volume}}"
+        fstype: ext4
+        opts: discard,defaults,noatime
+        state: mounted
+    - name: adduser {{tenetd.user}} to a system
+      ansible.builtin.user:
+        name: "{{tenetd.user}}"
+        shell: /sbin/nologin
+        create_home: no
+    - name: chown {{tenetd.home}} for tenetd
+      shell: "chown {{tenetd.user}} -R {{tenetd.home}}"
+    - name: install cosmovisor
+      block:
+        - name: create /opt/cosmovisor/bin directory
+          ansible.builtin.file:
+            path: /opt/cosmovisor/bin
+            state: directory
+        - name: install cosmovisor {{cosmovisor.version}}
+          unarchive:
+            src: "https://github.com/tenet-org/cosmovisor/releases/download/cosmovisor%2F{{cosmovisor.version}}/cosmovisor-{{cosmovisor.version}}-linux-{{cosmovisor.arch}}.tar.gz"
+            dest: /opt/cosmovisor/bin
+            remote_src: true
+        - name: create config file
+          copy:
+            dest: /opt/cosmovisor/cosmovisor.conf
+            content: |
+              DAEMON_NAME=tenetd
+              DAEMON_HOME={{tenetd.home}}
+              DAEMON_RESTART_AFTER_UPGRADE=true
+              DAEMON_ALLOW_DOWNLOAD_BINARIES=true
+              UNSAFE_SKIP_BACKUP=true
+          notify:
+            - restart cosmovisor
+        - name: create systemd unit file
+          copy:
+            dest: /etc/systemd/system/cosmovisor.service
+            content: |
+              [Unit]
+              Description=Cosmovisor service
+              After=network.target
+
+              [Service]
+              Type=simple
+              User=tenetd
+              WorkingDirectory={{tenetd.home}}
+              ExecStart=/opt/cosmovisor/bin/cosmovisor run start --home={{tenetd.home}}
+              EnvironmentFile=/opt/cosmovisor/cosmovisor.conf
+              Restart=on-failure
+              RestartSec=3
+              LimitNOFILE=4096
+
+              [Install]
+              WantedBy=multi-user.target
+          notify:
+            - restart cosmovisor
+    - name: install tenetd
+      block:
+        - name: install tenetd {{tenetd.version}}
+          unarchive:
+            src: "https://github.com/tenet-org/tenet-{{config}}/releases/download/v{{tenetd.version}}/tenet-{{config}}_{{tenetd.version}}_Linux_{{tenetd.arch}}.tar.gz"
+            dest: /opt/tenetd/cosmovisor/genesis
+            remote_src: true
+          notify:
+            - restart cosmovisor

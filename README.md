@@ -27,3 +27,9 @@ Once you have completed the setup, run the following command to start the node d
   ```
 
 Please note that this command should be run from the same directory where the `hosts.yml` and `deploy-node.yml` file is located. Also, ensure that you have the necessary permissions to execute the `ansible-playbook` command.
+
+### 
+```shell
+ansible-playbook deploy-volume-node.yml -i <IP>, -e "{volume: 'volume-name', config: 'testnet'}"
+```
+
